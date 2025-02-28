@@ -18,6 +18,7 @@ jobs:
     timeout-minutes: 9999
 
     steps:
+    # Step 1: Download & Install Tailscale
     - name: Download Tailscale
       run: Invoke-WebRequest https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe -OutFile tailscale-setup.exe
 
@@ -26,64 +27,69 @@ jobs:
 
     - name: Start Tailscale and Authenticate
       run: |
-        # Run Tailscale authentication using the up command.
         & "C:\Program Files\Tailscale\tailscale.exe" up
-        Write-Host "Tailscale authentication started. Please visit the link to authenticate this machine."
+        Write-Host "✅ Tailscale authentication started. Please visit the link to authenticate."
 
+    # Step 2: Enable Remote Desktop
     - name: Enable Remote Desktop
       run: |
-        # Enable Remote Desktop
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
-        Write-Host "Remote Desktop Enabled."
+        Write-Host "✅ Remote Desktop Enabled."
 
-    - name: Create or Update User for RDP Access and Admin Rights
+    # Step 3: Create or Update User for RDP Access and Admin Rights
+    - name: Create or Update User for RDP Access
       run: |
         $username = "${{ github.event.inputs.username }}"
         $password = "${{ github.event.inputs.password }}"
         
-        # Check if the user already exists
         $user = Get-LocalUser -Name $username -ErrorAction SilentlyContinue
         
         if ($null -eq $user) {
-            # Create a new user if it doesn't exist
-            New-LocalUser -Name $username -Password (ConvertTo-SecureString -AsPlainText $password -Force) -FullName $username -Description "RDP user"
-            Write-Host "User '$username' created successfully."
+            New-LocalUser -Name $username -Password (ConvertTo-SecureString -AsPlainText $password -Force) -FullName $username -Description "RDP User"
+            Write-Host "✅ User '$username' created successfully."
         } else {
-            # If the user exists, update the password
             Set-LocalUser -Name $username -Password (ConvertTo-SecureString -AsPlainText $password -Force)
-            Write-Host "Password for user '$username' updated successfully."
+            Write-Host "✅ Password updated for user '$username'."
         }
 
-        # Add user to the Remote Desktop Users group
         Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
-        Write-Host "User '$username' added to the 'Remote Desktop Users' group."
+        Write-Host "✅ User '$username' added to 'Remote Desktop Users'."
 
-        # Add user to the Administrators group
         Add-LocalGroupMember -Group "Administrators" -Member $username
-        Write-Host "User '$username' added to the 'Administrators' group."
+        Write-Host "✅ User '$username' added to 'Administrators'."
 
-    - name: Install VirtualBox
+    # Step 4: Install VMware Workstation Pro
+    - name: Install VMware Workstation Pro
       run: |
-        Write-Host "Downloading VirtualBox..."
-        Invoke-WebRequest -Uri "https://download.virtualbox.org/virtualbox/7.0.14/VirtualBox-7.0.14-161095-Win.exe" -OutFile "VirtualBox.exe"
+        Write-Host "⬇ Downloading VMware Workstation Pro..."
+        Invoke-WebRequest -Uri "https://archive.org/download/vmware-workstation-pro-17.5.2/VMware-workstation-full-17.5.2-23775571.exe" -OutFile "VMware.exe"
         
-        Write-Host "Installing VirtualBox..."
-        Start-Process -FilePath "VirtualBox.exe" -ArgumentList "--silent" -Wait
+        Write-Host "🛠 Installing VMware Workstation Pro..."
+        Start-Process -FilePath "VMware.exe" -ArgumentList "/s /v /qn REBOOT=ReallySuppress" -Wait
 
-        Write-Host "VirtualBox installed successfully."
+        Write-Host "✅ VMware Workstation Pro installed successfully."
 
+    # Step 5: Install Internet Download Manager (IDM)
+    - name: Install Internet Download Manager (IDM)
+      run: |
+        Write-Host "⬇ Downloading IDM..."
+        Invoke-WebRequest -Uri "https://mirror2.internetdownloadmanager.com/idman642build27.exe?v=lt&filename=idman642build27.exe" -OutFile "IDM.exe"
+
+        Write-Host "🛠 Installing IDM..."
+        Start-Process -FilePath "IDM.exe" -ArgumentList "/silent" -Wait
+
+        Write-Host "✅ IDM installed successfully."
+
+    # Step 6: Verify Tailscale Connection
     - name: Verify Tailscale Connection
       run: |
-        # Verify Tailscale status
         & "C:\Program Files\Tailscale\tailscale.exe" status
-        Write-Host "Tailscale connection verified."
+        Write-Host "✅ Tailscale connection verified."
 
-    - name: Endless Loop After Tailscale Connection
+    # Step 7: Keep Workflow Running
+    - name: Keep Workflow Running
       run: |
-        Write-Host "Entering endless loop... Press Ctrl+C to stop the workflow."
-        while ($true) {
-            # The loop does nothing but will keep the script running.
-            Start-Sleep -Seconds 10
-        }
+        Write-Host "🛠 Keeping the workflow running... Press Ctrl+C to stop."
+        while ($true) { Start-Sleep -Seconds 10 }
