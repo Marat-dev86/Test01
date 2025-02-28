@@ -20,47 +20,77 @@ jobs:
     steps:
     - name: Download and Install Tailscale
       run: |
+        echo "Downloading Tailscale..."
         Invoke-WebRequest https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe -OutFile tailscale-setup.exe
+        echo "Installing Tailscale..."
         Start-Process -FilePath "tailscale-setup.exe" -ArgumentList "/quiet" -Wait
+        echo "Tailscale installation complete."
 
     - name: Authenticate Tailscale (Manual Step)
       run: |
+        echo "Starting Tailscale authentication..."
         & "C:\Program Files\Tailscale\tailscale.exe" up
+        echo "Please follow the authentication link in the terminal."
 
     - name: Verify Tailscale Connection
       run: |
+        echo "Verifying Tailscale connection..."
         & "C:\Program Files\Tailscale\tailscale.exe" status
+        echo "Tailscale is now connected."
 
     - name: Create or Update User for VNC Access
       run: |
+        echo "Creating or updating user for VNC access..."
         $username = "${{ github.event.inputs.username }}"
         $password = "${{ github.event.inputs.password }}"
         
         $user = Get-LocalUser -Name $username -ErrorAction SilentlyContinue
         if ($null -eq $user) {
+            echo "Creating new user '$username'..."
             New-LocalUser -Name $username -Password (ConvertTo-SecureString -AsPlainText $password -Force) -FullName $username -Description "VNC user"
         } else {
+            echo "User '$username' exists. Updating password..."
             Set-LocalUser -Name $username -Password (ConvertTo-SecureString -AsPlainText $password -Force)
         }
         Add-LocalGroupMember -Group "Administrators" -Member $username
+        echo "User setup complete."
 
     - name: Download and Install VirtualBox
       run: |
+        echo "Downloading VirtualBox..."
         Invoke-WebRequest https://download.virtualbox.org/virtualbox/7.0.14/VirtualBox-7.0.14-161095-Win.exe -OutFile virtualbox.exe
+        echo "Installing VirtualBox..."
         Start-Process -FilePath "virtualbox.exe" -ArgumentList "/S" -Wait
+        echo "VirtualBox installation complete."
 
     - name: Download and Install TigerVNC
       run: |
+        echo "Downloading TigerVNC..."
         Invoke-WebRequest https://sourceforge.net/projects/tigervnc/files/stable/1.12.0/tigervnc64-1.12.0.exe/download -OutFile tigervnc.exe
+        echo "Installing TigerVNC..."
         Start-Process -FilePath "tigervnc.exe" -ArgumentList "/silent" -Wait
+        echo "TigerVNC installation complete."
 
     - name: Configure and Start VNC Server
       run: |
+        echo "Configuring VNC server..."
         $vncPass = ConvertTo-SecureString "${{ github.event.inputs.password }}" -AsPlainText -Force
         New-Item -ItemType Directory -Path "C:\Users\${{ github.event.inputs.username }}\.vnc" -Force
         $vncPass | Out-File -Encoding ASCII "C:\Users\${{ github.event.inputs.username }}\.vnc\passwd"
+        echo "Starting VNC server..."
         Start-Process -FilePath "C:\Program Files\TigerVNC\vncserver.exe" -ArgumentList ":1 -rfbport 5901 -localhost no" -NoNewWindow -PassThru
+        echo "VNC server is now running on port 5901."
+
+    - name: Display Connection Info
+      run: |
+        echo "Tailscale IP Address:"
+        & "C:\Program Files\Tailscale\tailscale.exe" ip -4
+        echo "Use a VNC client to connect using:"
+        echo "Address: vnc://<Tailscale-IP>:5901"
+        echo "Username: ${{ github.event.inputs.username }}"
+        echo "Password: (Entered in the workflow)"
 
     - name: Keep System Running
       run: |
+        echo "Keeping system running..."
         while ($true) { Start-Sleep -Seconds 10 }
