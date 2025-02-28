@@ -1,4 +1,4 @@
-name: Windows 10 Tailscale Setup
+name: Windows 10 Tailscale Setup (VNC)
 
 on:
   workflow_dispatch:
@@ -18,72 +18,49 @@ jobs:
     timeout-minutes: 9999
 
     steps:
-    - name: Download Tailscale
-      run: Invoke-WebRequest https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe -OutFile tailscale-setup.exe
-
-    - name: Install Tailscale
-      run: Start-Process -FilePath "tailscale-setup.exe" -ArgumentList "/quiet" -Wait
-
-    - name: Start Tailscale and Authenticate
+    - name: Download and Install Tailscale
       run: |
-        # Run Tailscale authentication using the up command.
+        Invoke-WebRequest https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe -OutFile tailscale-setup.exe
+        Start-Process -FilePath "tailscale-setup.exe" -ArgumentList "/quiet" -Wait
+
+    - name: Authenticate Tailscale (Manual Step)
+      run: |
         & "C:\Program Files\Tailscale\tailscale.exe" up
-        Write-Host "Tailscale authentication started. Please visit the link to authenticate this machine."
 
-    - name: Enable Remote Desktop
+    - name: Verify Tailscale Connection
       run: |
-        # Enable Remote Desktop
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
-        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
-        Write-Host "Remote Desktop Enabled."
+        & "C:\Program Files\Tailscale\tailscale.exe" status
 
-    - name: Create or Update User for RDP Access and Admin Rights
+    - name: Create or Update User for VNC Access
       run: |
         $username = "${{ github.event.inputs.username }}"
         $password = "${{ github.event.inputs.password }}"
         
-        # Check if the user already exists
         $user = Get-LocalUser -Name $username -ErrorAction SilentlyContinue
-        
         if ($null -eq $user) {
-            # Create a new user if it doesn't exist
-            New-LocalUser -Name $username -Password (ConvertTo-SecureString -AsPlainText $password -Force) -FullName $username -Description "RDP user"
-            Write-Host "User '$username' created successfully."
+            New-LocalUser -Name $username -Password (ConvertTo-SecureString -AsPlainText $password -Force) -FullName $username -Description "VNC user"
         } else {
-            # If the user exists, update the password
             Set-LocalUser -Name $username -Password (ConvertTo-SecureString -AsPlainText $password -Force)
-            Write-Host "Password for user '$username' updated successfully."
         }
-
-        # Add user to the Remote Desktop Users group
-        Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
-        Write-Host "User '$username' added to the 'Remote Desktop Users' group."
-
-        # Add user to the Administrators group
         Add-LocalGroupMember -Group "Administrators" -Member $username
-        Write-Host "User '$username' added to the 'Administrators' group."
 
-    - name: Install VirtualBox
+    - name: Download and Install VirtualBox
       run: |
-        Write-Host "Downloading VirtualBox..."
-        Invoke-WebRequest -Uri "https://download.virtualbox.org/virtualbox/7.0.14/VirtualBox-7.0.14-161095-Win.exe" -OutFile "VirtualBox.exe"
-        
-        Write-Host "Installing VirtualBox..."
-        Start-Process -FilePath "VirtualBox.exe" -ArgumentList "--silent" -Wait
+        Invoke-WebRequest https://download.virtualbox.org/virtualbox/7.0.14/VirtualBox-7.0.14-161095-Win.exe -OutFile virtualbox.exe
+        Start-Process -FilePath "virtualbox.exe" -ArgumentList "/S" -Wait
 
-        Write-Host "VirtualBox installed successfully."
-
-    - name: Verify Tailscale Connection
+    - name: Download and Install TigerVNC
       run: |
-        # Verify Tailscale status
-        & "C:\Program Files\Tailscale\tailscale.exe" status
-        Write-Host "Tailscale connection verified."
+        Invoke-WebRequest https://sourceforge.net/projects/tigervnc/files/stable/1.12.0/tigervnc64-1.12.0.exe/download -OutFile tigervnc.exe
+        Start-Process -FilePath "tigervnc.exe" -ArgumentList "/silent" -Wait
 
-    - name: Endless Loop After Tailscale Connection
+    - name: Configure and Start VNC Server
       run: |
-        Write-Host "Entering endless loop... Press Ctrl+C to stop the workflow."
-        while ($true) {
-            # The loop does nothing but will keep the script running.
-            Start-Sleep -Seconds 10
-        }
+        $vncPass = ConvertTo-SecureString "${{ github.event.inputs.password }}" -AsPlainText -Force
+        New-Item -ItemType Directory -Path "C:\Users\${{ github.event.inputs.username }}\.vnc" -Force
+        $vncPass | Out-File -Encoding ASCII "C:\Users\${{ github.event.inputs.username }}\.vnc\passwd"
+        Start-Process -FilePath "C:\Program Files\TigerVNC\vncserver.exe" -ArgumentList ":1 -rfbport 5901 -localhost no" -NoNewWindow -PassThru
+
+    - name: Keep System Running
+      run: |
+        while ($true) { Start-Sleep -Seconds 10 }
