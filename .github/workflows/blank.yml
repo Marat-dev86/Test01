@@ -2,6 +2,15 @@ name: Windows RDP - Pinggy Tunnel
 
 on:
   workflow_dispatch:
+    inputs:
+      username:
+        description: "Enter the username for the remote user"
+        required: true
+        default: "runneradmin"
+      password:
+        description: "Enter the password for the remote user"
+        required: true
+        default: "P@ssw0rd!"
 
 jobs:
   build:
@@ -18,7 +27,27 @@ jobs:
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
           echo "✅ Remote Desktop Enabled."
 
-      # Step 2: Install OpenSSH (for Tunnel)
+      # Step 2: Create or Update User for RDP Access
+      - name: Create or Update User
+        run: |
+          $username = "${{ github.event.inputs.username }}"
+          $password = "${{ github.event.inputs.password }}"
+
+          echo "Checking if user '$username' exists..."
+          $user = Get-LocalUser -Name $username -ErrorAction SilentlyContinue
+
+          if ($null -eq $user) {
+              echo "Creating user '$username'..."
+              New-LocalUser -Name $username -Password (ConvertTo-SecureString -AsPlainText $password -Force) -FullName $username -Description "RDP User"
+              Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
+              echo "✅ User '$username' created and added to RDP group."
+          } else {
+              echo "Updating password for existing user '$username'..."
+              Set-LocalUser -Name $username -Password (ConvertTo-SecureString -AsPlainText $password -Force)
+              echo "✅ Password updated for user '$username'."
+          }
+
+      # Step 3: Install OpenSSH (for Tunnel)
       - name: Install OpenSSH
         run: |
           echo "Installing OpenSSH..."
@@ -27,21 +56,21 @@ jobs:
           Set-Service -Name sshd -StartupType Automatic
           echo "✅ OpenSSH installed and running."
 
-      # Step 3: Download & Configure Pinggy
+      # Step 4: Download & Configure Pinggy
       - name: Download & Configure Pinggy
         run: |
           echo "Downloading Pinggy..."
           Invoke-WebRequest -Uri "https://github.com/pinggy-io/pinggy/releases/latest/download/pinggy.exe" -OutFile pinggy.exe
           echo "✅ Pinggy downloaded."
 
-      # Step 4: Start Pinggy SSH Tunnel
+      # Step 5: Start Pinggy SSH Tunnel
       - name: Start Pinggy Tunnel
         run: |
           echo "Starting Pinggy SSH tunnel..."
-          Start-Process -NoNewWindow -FilePath "pinggy.exe" -ArgumentList "-p 443 -R0:127.0.0.1:3389 -L4300:127.0.0.1:4300 -o StrictHostKeyChecking=no -o ServerAliveInterval=30 M8VegescUgm@a.pinggy.io"
+          Start-Process -NoNewWindow -FilePath ".\pinggy.exe" -ArgumentList "-p 443 -R0:127.0.0.1:3389 -L4300:127.0.0.1:4300 -o StrictHostKeyChecking=no -o ServerAliveInterval=30 M8VegescUgm@eu.a.pinggy.io"
           echo "✅ Pinggy tunnel started."
 
-      # Step 5: Keep Workflow Running
+      # Step 6: Keep Workflow Running
       - name: Keep Workflow Running
         run: |
           echo "Workflow is running indefinitely..."
