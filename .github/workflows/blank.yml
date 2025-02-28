@@ -1,16 +1,7 @@
-name: Windows 10 Tailscale Setup
+name: Windows RDP - Pinggy Tunnel
 
 on:
   workflow_dispatch:
-    inputs:
-      username:
-        description: "Enter the username for the remote user"
-        required: true
-        default: "runneradmin"
-      password:
-        description: "Enter the password for the remote user"
-        required: true
-        default: "@cyb3rking"
 
 jobs:
   build:
@@ -18,72 +9,40 @@ jobs:
     timeout-minutes: 9999
 
     steps:
-    - name: Download Tailscale
-      run: Invoke-WebRequest https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe -OutFile tailscale-setup.exe
+      # Step 1: Enable Remote Desktop
+      - name: Enable Remote Desktop
+        run: |
+          echo "Enabling Remote Desktop..."
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
+          echo "✅ Remote Desktop Enabled."
 
-    - name: Install Tailscale
-      run: Start-Process -FilePath "tailscale-setup.exe" -ArgumentList "/quiet" -Wait
+      # Step 2: Install OpenSSH (for Tunnel)
+      - name: Install OpenSSH
+        run: |
+          echo "Installing OpenSSH..."
+          Add-WindowsFeature -Name OpenSSH-Server
+          Start-Service sshd
+          Set-Service -Name sshd -StartupType Automatic
+          echo "✅ OpenSSH installed and running."
 
-    - name: Start Tailscale and Authenticate
-      run: |
-        # Run Tailscale authentication using the up command.
-        & "C:\Program Files\Tailscale\tailscale.exe" up
-        Write-Host "Tailscale authentication started. Please visit the link to authenticate this machine."
+      # Step 3: Download & Configure Pinggy
+      - name: Download & Configure Pinggy
+        run: |
+          echo "Downloading Pinggy..."
+          Invoke-WebRequest -Uri "https://github.com/pinggy-io/pinggy/releases/latest/download/pinggy.exe" -OutFile pinggy.exe
+          echo "✅ Pinggy downloaded."
 
-    - name: Enable Remote Desktop
-      run: |
-        # Enable Remote Desktop
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
-        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
-        Write-Host "Remote Desktop Enabled."
+      # Step 4: Start Pinggy SSH Tunnel
+      - name: Start Pinggy Tunnel
+        run: |
+          echo "Starting Pinggy SSH tunnel..."
+          Start-Process -NoNewWindow -FilePath "pinggy.exe" -ArgumentList "-p 443 -R0:127.0.0.1:3389 -L4300:127.0.0.1:4300 -o StrictHostKeyChecking=no -o ServerAliveInterval=30 M8VegescUgm@a.pinggy.io"
+          echo "✅ Pinggy tunnel started."
 
-    - name: Create or Update User for RDP Access and Admin Rights
-      run: |
-        $username = "${{ github.event.inputs.username }}"
-        $password = "${{ github.event.inputs.password }}"
-        
-        # Check if the user already exists
-        $user = Get-LocalUser -Name $username -ErrorAction SilentlyContinue
-        
-        if ($null -eq $user) {
-            # Create a new user if it doesn't exist
-            New-LocalUser -Name $username -Password (ConvertTo-SecureString -AsPlainText $password -Force) -FullName $username -Description "RDP user"
-            Write-Host "User '$username' created successfully."
-        } else {
-            # If the user exists, update the password
-            Set-LocalUser -Name $username -Password (ConvertTo-SecureString -AsPlainText $password -Force)
-            Write-Host "Password for user '$username' updated successfully."
-        }
-
-        # Add user to the Remote Desktop Users group
-        Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
-        Write-Host "User '$username' added to the 'Remote Desktop Users' group."
-
-        # Add user to the Administrators group
-        Add-LocalGroupMember -Group "Administrators" -Member $username
-        Write-Host "User '$username' added to the 'Administrators' group."
-
-    - name: Install VirtualBox
-      run: |
-        Write-Host "Downloading VirtualBox..."
-        Invoke-WebRequest -Uri "https://download.virtualbox.org/virtualbox/7.0.14/VirtualBox-7.0.14-161095-Win.exe" -OutFile "VirtualBox.exe"
-        
-        Write-Host "Installing VirtualBox..."
-        Start-Process -FilePath "VirtualBox.exe" -ArgumentList "--silent" -Wait
-
-        Write-Host "VirtualBox installed successfully."
-
-    - name: Verify Tailscale Connection
-      run: |
-        # Verify Tailscale status
-        & "C:\Program Files\Tailscale\tailscale.exe" status
-        Write-Host "Tailscale connection verified."
-
-    - name: Endless Loop After Tailscale Connection
-      run: |
-        Write-Host "Entering endless loop... Press Ctrl+C to stop the workflow."
-        while ($true) {
-            # The loop does nothing but will keep the script running.
-            Start-Sleep -Seconds 10
-        }
+      # Step 5: Keep Workflow Running
+      - name: Keep Workflow Running
+        run: |
+          echo "Workflow is running indefinitely..."
+          while ($true) { Start-Sleep -Seconds 60 }
