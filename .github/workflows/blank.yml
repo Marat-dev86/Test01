@@ -1,0 +1,89 @@
+name: Windows 10 Tailscale Setup
+
+on:
+  workflow_dispatch:
+    inputs:
+      username:
+        description: "Enter the username for the remote user"
+        required: true
+        default: "runneradmin"
+      password:
+        description: "Enter the password for the remote user"
+        required: true
+        default: "@cyb3rking"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 9999
+
+    steps:
+    - name: Download Tailscale
+      run: Invoke-WebRequest https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe -OutFile tailscale-setup.exe
+
+    - name: Install Tailscale
+      run: Start-Process -FilePath "tailscale-setup.exe" -ArgumentList "/quiet" -Wait
+
+    - name: Start Tailscale and Authenticate
+      run: |
+        # Run Tailscale authentication using the up command.
+        & "C:\Program Files\Tailscale\tailscale.exe" up
+        Write-Host "Tailscale authentication started. Please visit the link to authenticate this machine."
+
+    - name: Enable Remote Desktop
+      run: |
+        # Enable Remote Desktop
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
+        Write-Host "Remote Desktop Enabled."
+
+    - name: Create or Update User for RDP Access and Admin Rights
+      run: |
+        $username = "${{ github.event.inputs.username }}"
+        $password = "${{ github.event.inputs.password }}"
+        
+        # Check if the user already exists
+        $user = Get-LocalUser -Name $username -ErrorAction SilentlyContinue
+        
+        if ($null -eq $user) {
+            # Create a new user if it doesn't exist
+            New-LocalUser -Name $username -Password (ConvertTo-SecureString -AsPlainText $password -Force) -FullName $username -Description "RDP user"
+            Write-Host "User '$username' created successfully."
+        } else {
+            # If the user exists, update the password
+            Set-LocalUser -Name $username -Password (ConvertTo-SecureString -AsPlainText $password -Force)
+            Write-Host "Password for user '$username' updated successfully."
+        }
+
+        # Add user to the Remote Desktop Users group
+        Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
+        Write-Host "User '$username' added to the 'Remote Desktop Users' group."
+
+        # Add user to the Administrators group
+        Add-LocalGroupMember -Group "Administrators" -Member $username
+        Write-Host "User '$username' added to the 'Administrators' group."
+
+    - name: Install VirtualBox
+      run: |
+        Write-Host "Downloading VirtualBox..."
+        Invoke-WebRequest -Uri "https://download.virtualbox.org/virtualbox/7.0.14/VirtualBox-7.0.14-161095-Win.exe" -OutFile "VirtualBox.exe"
+        
+        Write-Host "Installing VirtualBox..."
+        Start-Process -FilePath "VirtualBox.exe" -ArgumentList "--silent" -Wait
+
+        Write-Host "VirtualBox installed successfully."
+
+    - name: Verify Tailscale Connection
+      run: |
+        # Verify Tailscale status
+        & "C:\Program Files\Tailscale\tailscale.exe" status
+        Write-Host "Tailscale connection verified."
+
+    - name: Endless Loop After Tailscale Connection
+      run: |
+        Write-Host "Entering endless loop... Press Ctrl+C to stop the workflow."
+        while ($true) {
+            # The loop does nothing but will keep the script running.
+            Start-Sleep -Seconds 10
+        }
